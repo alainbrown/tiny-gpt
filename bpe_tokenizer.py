@@ -1,5 +1,6 @@
 from collections import Counter
 import json
+from itertools import islice
 
 class BPETokenizer:
     def __init__(self):
@@ -9,10 +10,13 @@ class BPETokenizer:
         # Special tokens live outside byte range.
         self.eos_id = 256
         self.vocab[self.eos_id] = b""
+        
+        self.byte_encoder = self.bytes_to_unicode()
+        self.byte_decoder = {v: k for k, v in self.byte_encoder.items()}
 
-        # Ordered list of merges:
-        # [((left_id, right_id), new_id), ...]
-        self.merges = []
+        # Dictionary mapping pair to new_id:
+        # {(left_id, right_id): new_id}
+        self.merges = {}
 
     def text_to_ids(self, text):
         return list(text.encode("utf-8"))
@@ -21,7 +25,7 @@ class BPETokenizer:
         counts = Counter()
 
         for ids in sequences:
-            for pair in zip(ids, ids[1:]):
+            for pair in zip(ids, islice(ids, 1, None)):
                 counts[pair] += 1
 
         return counts
@@ -61,8 +65,7 @@ class BPETokenizer:
 
             new_id = next_id
             next_id += 1
-
-            self.merges.append((pair, new_id))
+            self.merges[pair] = new_id
 
             left, right = pair
             self.vocab[new_id] = self.vocab[left] + self.vocab[right]
@@ -74,8 +77,14 @@ class BPETokenizer:
 
     def encode(self, text, add_eos=False):
         ids = self.text_to_ids(text)
+        while len(ids) >= 2:
+            pairs_zip = zip(ids, islice(ids, 1, None))
+            pair = min(pairs_zip, key=lambda p: self.merges.get(p, float("inf")))
+            
+            if pair not in self.merges:
+                break
 
-        for pair, new_id in self.merges:
+            new_id = self.merges[pair]
             ids = self.apply_merge(ids, pair, new_id)
 
         if add_eos:
@@ -95,32 +104,74 @@ class BPETokenizer:
         return b"".join(chunks).decode("utf-8", errors="replace")
 
     def save(self, path):
+        vocab_export = {}
+        for idx, token_bytes in self.vocab.items():
+            if idx == self.eos_id:
+                continue
+            token_str = "".join([self.byte_encoder[b] for b in token_bytes])
+            vocab_export[token_str] = idx
+
+        merges_export = []
+        sorted_merges = sorted(self.merges.items(), key=lambda x: x[1])
+        for (left, right), new_id in sorted_merges:
+            left_str = "".join([self.byte_encoder[b] for b in self.vocab[left]])
+            right_str = "".join([self.byte_encoder[b] for b in self.vocab[right]])
+            merges_export.append(f"{left_str} {right_str}")
+
         data = {
-            "eos_id": self.eos_id,
-            "merges": [
-                [left, right, new_id]
-                for (left, right), new_id in self.merges
+            "version": "1.0",
+            "added_tokens": [
+                {"id": self.eos_id, "content": "<EOS>", "special": True}
             ],
+            "model": {
+                "type": "BPE",
+                "vocab": vocab_export,
+                "merges": merges_export
+            }
         }
 
-        with open(path, "w") as f:
-            json.dump(data, f)
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
 
     @classmethod
     def load(cls, path):
         tokenizer = cls()
 
-        with open(path, "r") as f:
+        with open(path, "r", encoding="utf-8") as f:
             data = json.load(f)
 
-        tokenizer.eos_id = data["eos_id"]
-        tokenizer.merges = []
-
-        for left, right, new_id in data["merges"]:
-            pair = (left, right)
-            tokenizer.merges.append((pair, new_id))
-            tokenizer.vocab[new_id] = (
-                tokenizer.vocab[left] + tokenizer.vocab[right]
-            )
+        tokenizer.eos_id = data["added_tokens"][0]["id"]
+        
+        vocab_import = data["model"]["vocab"]
+        tokenizer.vocab = {}
+        for token_str, idx in vocab_import.items():
+            token_bytes = bytes([tokenizer.byte_decoder[c] for c in token_str])
+            tokenizer.vocab[idx] = token_bytes
+            
+        tokenizer.vocab[tokenizer.eos_id] = b""
+        
+        tokenizer.merges = {}
+        for merge_str in data["model"]["merges"]:
+            left_str, right_str = merge_str.split(" ")
+            merged_str = left_str + right_str
+            
+            left_id = vocab_import[left_str]
+            right_id = vocab_import[right_str]
+            new_id = vocab_import[merged_str]
+            
+            tokenizer.merges[(left_id, right_id)] = new_id
 
         return tokenizer
+
+    @staticmethod
+    def bytes_to_unicode():
+        bs = list(range(ord("!"), ord("~")+1)) + list(range(ord("¡"), ord("¬")+1)) + list(range(ord("®"), ord("ÿ")+1))
+        cs = bs[:]
+        n = 0
+        for b in range(2**8):
+            if b not in bs:
+                bs.append(b)
+                cs.append(2**8 + n)
+                n += 1
+        cs = [chr(n) for n in cs]
+        return dict(zip(bs, cs))

@@ -63,9 +63,9 @@ class BPETokenizer:
         self.eos_id = 256
         self.vocab[self.eos_id] = b""
 
-        # Ordered list of merges:
-        # [((left_id, right_id), new_id), ...]
-        self.merges = []
+        # Dictionary mapping pair to new_id:
+        # {(left_id, right_id): new_id}
+        self.merges = {}
 
     def text_to_ids(self, text):
         return list(text.encode("utf-8"))
@@ -116,7 +116,7 @@ class BPETokenizer:
             new_id = next_id
             next_id += 1
 
-            self.merges.append((pair, new_id))
+            self.merges[pair] = new_id
 
             left, right = pair
             self.vocab[new_id] = self.vocab[left] + self.vocab[right]
@@ -129,7 +129,14 @@ class BPETokenizer:
     def encode(self, text, add_eos=False):
         ids = self.text_to_ids(text)
 
-        for pair, new_id in self.merges:
+        while len(ids) >= 2:
+            pairs = list(zip(ids, ids[1:]))
+            pair = min(pairs, key=lambda p: self.merges.get(p, float("inf")))
+            
+            if pair not in self.merges:
+                break
+                
+            new_id = self.merges[pair]
             ids = self.apply_merge(ids, pair, new_id)
 
         if add_eos:
@@ -153,7 +160,7 @@ class BPETokenizer:
             "eos_id": self.eos_id,
             "merges": [
                 [left, right, new_id]
-                for (left, right), new_id in self.merges
+                for (left, right), new_id in self.merges.items()
             ],
         }
 
@@ -168,11 +175,11 @@ class BPETokenizer:
             data = json.load(f)
 
         tokenizer.eos_id = data["eos_id"]
-        tokenizer.merges = []
+        tokenizer.merges = {}
 
         for left, right, new_id in data["merges"]:
             pair = (left, right)
-            tokenizer.merges.append((pair, new_id))
+            tokenizer.merges[pair] = new_id
             tokenizer.vocab[new_id] = (
                 tokenizer.vocab[left] + tokenizer.vocab[right]
             )

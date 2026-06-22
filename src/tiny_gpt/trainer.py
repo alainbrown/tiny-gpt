@@ -81,7 +81,7 @@ class Trainer:
                 param_group['lr'] = lr
 
             with torch.autocast(device_type='cuda', dtype=torch.bfloat16):
-                logits = self.model(x)
+                logits = self.model(x).logits
                 loss = self.loss_fn(
                     logits.view(-1, self.model.config.vocab_size),
                     y.view(-1)
@@ -125,7 +125,7 @@ class Trainer:
                 y = y.to(self.device)
 
                 with torch.autocast(device_type='cuda', dtype=torch.bfloat16):
-                    logits = self.model(x)
+                    logits = self.model(x).logits
                     loss = self.loss_fn(
                         logits.view(-1, self.model.config.vocab_size),
                         y.view(-1)

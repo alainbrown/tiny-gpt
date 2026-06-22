@@ -35,9 +35,11 @@ services:
     environment:
       - HF_HOME=/app/.cache/huggingface
       - PYTHONUNBUFFERED=1
+      - MODEL_ID=${MODEL_ID:-alainbrown/tiny-gpt}
+      - MODEL_REVISION=${MODEL_REVISION:-main}
     ports:
       - "7860:7860"
-    command: python app.py
+    command: python apps/gradio/app.py
     profiles:
       - gradio
     deploy:
@@ -47,3 +49,17 @@ services:
             - driver: nvidia
               count: all
               capabilities: [gpu]
+
+  hub-export:
+    build: .
+    volumes:
+      - .:/app
+    environment:
+      - HF_HOME=/app/.cache/huggingface
+      - PYTHONUNBUFFERED=1
+    profiles:
+      - tools
+    command: >
+      python scripts/export_model.py
+      --checkpoint checkpoints/tiny_gpt
+      --output checkpoints/tiny_gpt_hub

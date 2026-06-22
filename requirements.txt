@@ -1,7 +1,0 @@
--e .
-torch
-transformers
-datasets
-safetensors
-gradio
-spaces

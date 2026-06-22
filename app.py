@@ -3,50 +3,45 @@ import torch
 import os
 import spaces
 
-from src.generate import generate_stream
+from src.generate import TextGenerator
 from src.hf_model import TinyGPTForCausalLM
-from src.bpe_tokenizer import BPETokenizer
+from transformers import PreTrainedTokenizerFast
 
 checkpoint_dir = os.environ.get("CHECKPOINT_DIR", "checkpoints/tiny_gpt")
 tokenizer_path = os.environ.get("TOKENIZER_PATH", "tiny_bpe_v2.json")
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 try:
-    tokenizer = BPETokenizer.load(tokenizer_path)
+    tokenizer = PreTrainedTokenizerFast(tokenizer_file=tokenizer_path, eos_token="<EOS>")
     model = TinyGPTForCausalLM.from_pretrained(checkpoint_dir)
     model.to(device)
     model.eval()
     context_size = model.config.context_size
+    text_generator = TextGenerator(model, tokenizer, context_size)
     print("Model loaded successfully.")
 except Exception as e:
     print(f"Warning: Model could not be loaded at startup. {e}")
     tokenizer = None
     model = None
     context_size = 32
+    text_generator = None
 
 @spaces.GPU
 def stream_chat(message, history, temperature, top_k):
-    if model is None:
+    if text_generator is None:
         yield "Model not found. Please ensure the checkpoint exists."
         return
 
-    prompt_ids = tokenizer.encode(message)
-    
-    generator = generate_stream(
-        model=model,
-        prompt_ids=prompt_ids,
+    output_text = ""
+    for chunk in text_generator.generate_stream(
+        prompt_text=message,
         max_new_tokens=200,
-        context_size=context_size,
-        tokenizer=tokenizer,
         mode="sample",
         temperature=temperature,
         top_k=int(top_k) if top_k > 0 else None,
-    )
-    
-    output_ids = []
-    for token_id in generator:
-        output_ids.append(token_id)
-        yield tokenizer.decode(output_ids, skip_special=True)
+    ):
+        output_text += chunk
+        yield output_text
 
 demo = gr.ChatInterface(
     fn=stream_chat,

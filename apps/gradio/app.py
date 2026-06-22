@@ -1,14 +1,14 @@
 import os
+import math
 
 import gradio as gr
-import spaces
 import torch
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
 
 MODEL_ID = os.environ.get("MODEL_ID", "alainbrown/tiny-gpt")
 MODEL_REVISION = os.environ.get("MODEL_REVISION", "main")
-DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+DEVICE = torch.device("cpu")
 
 
 def load_model():
@@ -48,42 +48,56 @@ def build_prompt(message, history):
     return "\n".join(parts)
 
 
-try:
-    model, tokenizer = load_model()
-    load_error = None
-    print(f"Loaded {MODEL_ID}@{MODEL_REVISION} on {DEVICE}.")
-except Exception as error:
-    model = None
-    tokenizer = None
-    load_error = str(error)
-    print(f"Could not load {MODEL_ID}@{MODEL_REVISION}: {error}")
+def validate_generation_settings(temperature, top_k, max_new_tokens):
+    try:
+        temperature = float(temperature) if temperature is not None else 0.8
+        top_k = int(top_k) if top_k is not None else 20
+        max_new_tokens = int(max_new_tokens) if max_new_tokens is not None else 128
+    except (TypeError, ValueError, OverflowError) as error:
+        raise gr.Error("Generation settings must be numeric values.") from error
+
+    if not math.isfinite(temperature) or not 0.1 <= temperature <= 2.0:
+        raise gr.Error("Temperature must be between 0.1 and 2.0.")
+    if not 0 <= top_k <= model.config.vocab_size:
+        raise gr.Error(
+            f"Top-k must be between 0 and {model.config.vocab_size}."
+        )
+    if not 1 <= max_new_tokens <= 300:
+        raise gr.Error("Maximum new tokens must be between 1 and 300.")
+
+    return temperature, top_k, max_new_tokens
 
 
-@spaces.GPU
+model, tokenizer = load_model()
+print(f"Loaded {MODEL_ID}@{MODEL_REVISION} on {DEVICE}.")
+
+
 def stream_chat(message, history, temperature, top_k, max_new_tokens):
-    if model is None or tokenizer is None:
-        yield f"Model {MODEL_ID} is currently unavailable."
-        return
-
-    message = message.strip()
+    message = (message or "").strip()
     if not message:
         yield "Please enter a message."
         return
+
+    temperature, top_k, max_new_tokens = validate_generation_settings(
+        temperature,
+        top_k,
+        max_new_tokens,
+    )
 
     prompt = build_prompt(message, history)
     input_ids = tokenizer(prompt, return_tensors="pt")["input_ids"].to(DEVICE)
     context_size = model.config.context_size
     input_ids = input_ids[:, -context_size:]
-    output_text = ""
+    generated_ids = []
 
     with torch.no_grad():
-        for _ in range(int(max_new_tokens)):
+        for _ in range(max_new_tokens):
             model_inputs = input_ids[:, -context_size:]
             logits = model(input_ids=model_inputs).logits[:, -1, :]
             logits = logits / temperature
 
             if top_k > 0:
-                values, indices = torch.topk(logits, int(top_k))
+                values, indices = torch.topk(logits, top_k)
                 filtered_logits = torch.full_like(logits, float("-inf"))
                 filtered_logits.scatter_(1, indices, values)
                 logits = filtered_logits
@@ -96,15 +110,15 @@ def stream_chat(message, history, temperature, top_k, max_new_tokens):
             if tokenizer.eos_token_id is not None and token_id == tokenizer.eos_token_id:
                 break
 
-            chunk = tokenizer.decode(
-                [token_id],
+            generated_ids.append(token_id)
+            output_text = tokenizer.decode(
+                generated_ids,
                 skip_special_tokens=True,
             )
-            if chunk:
-                output_text += chunk
+            if output_text:
                 yield output_text
 
-    if not output_text:
+    if not generated_ids:
         yield "The model ended its response immediately. Please try another prompt."
 
 
@@ -136,10 +150,11 @@ demo = gr.ChatInterface(
         ),
     ],
     examples=[
-        ["Tell me a short story about a brave little fox."],
-        ["Once upon a time, a robot found a tiny garden."],
-        ["Write a bedtime story about the moon and the sea."],
+        ["Tell me a short story about a brave little fox.", 0.8, 20, 128],
+        ["Once upon a time, a robot found a tiny garden.", 0.8, 20, 128],
+        ["Write a bedtime story about the moon and the sea.", 0.8, 20, 128],
     ],
+    cache_examples=False,
 )
 
 

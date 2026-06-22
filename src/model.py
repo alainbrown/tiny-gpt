@@ -36,9 +36,14 @@ class Model(nn.Module):
         self.linear = nn.Linear(d_model, vocab_size, bias=False)
         self.linear.weight = self.token_embedding.weight
         self.dropout = nn.Dropout(dropout)
+        self.final_layer_norm = LayerNorm(d_model)
 
     def forward(self, x):
-        positions = torch.arange(x.shape[1], device=x.device)
+        B, T = x.shape
+
+        assert T <= self.context_size, "Input sequence is longer than context_size"
+
+        positions = torch.arange(T, device=x.device)
 
         position = self.position_embedding(positions)
         token = self.token_embedding(x)
@@ -49,6 +54,7 @@ class Model(nn.Module):
         for block in self.transformer_blocks:
             x = block(x)
 
+        x = self.final_layer_norm(x)
         logits = self.linear(x)
 
         return logits
@@ -78,39 +84,23 @@ class LayerNorm(nn.Module):
         normalized = diff / torch.sqrt(variance + 1e-6)
         return self.gamma * normalized + self.beta
 
-class TransformerBlock(nn.Module):
+class MultiHeadAttention(nn.Module):
     def __init__(self, d_model, n_heads, dropout=0.1):
         super().__init__()
 
-        assert d_model % n_heads == 0
+        assert d_model % n_heads == 0, "d_model must be divisible by n_heads"
 
         self.n_heads = n_heads
-        self.head_dim = d_model // self.n_heads 
+        self.head_dim = d_model // n_heads
         self.scale = math.sqrt(self.head_dim)
 
         self.query = nn.Linear(d_model, d_model)
         self.key = nn.Linear(d_model, d_model)
         self.value = nn.Linear(d_model, d_model)
-        self.feed_forward = FeedForward(d_model)
-        self.layer_norm1 = LayerNorm(d_model)
-        self.layer_norm2 = LayerNorm(d_model)
-        self.dropout = nn.Dropout(dropout)
+
         self.head_proj = nn.Linear(d_model, d_model)
 
     def forward(self, x):
-        attention = self.self_attention(self.layer_norm1(x))
-        attention = self.dropout(attention)
-
-        x = x + attention
-
-        feed_forward = self.feed_forward(self.layer_norm2(x))
-        feed_forward = self.dropout(feed_forward)
-
-        x = x + feed_forward
-
-        return x
-
-    def self_attention(self, x):
         query = self.split_heads(self.query(x))
         key = self.split_heads(self.key(x))
         value = self.split_heads(self.value(x))
@@ -119,12 +109,20 @@ class TransformerBlock(nn.Module):
         scores = scores / self.scale
 
         context_size = query.shape[2]
-        mask = torch.tril(torch.ones(context_size, context_size, device=query.device))
+
+        mask = torch.tril(
+            torch.ones(context_size, context_size, device=query.device)
+        )
+        mask = mask.view(1, 1, context_size, context_size)
+
         scores = scores.masked_fill(mask == 0, float("-inf"))
 
         weights = torch.nn.functional.softmax(scores, dim=-1)
+
         attended = torch.matmul(weights, value)
+
         attended = self.combine_heads(attended)
+
         attended = self.head_proj(attended)
 
         return attended
@@ -132,14 +130,38 @@ class TransformerBlock(nn.Module):
     def split_heads(self, x):
         batch_size, seq_len, d_model = x.shape
 
-        x = x.view(batch_size, seq_len, self.n_heads, self.head_dim)
+        x = x.reshape(batch_size, seq_len, self.n_heads, self.head_dim)
         x = x.transpose(1, 2)
 
         return x
 
     def combine_heads(self, x):
         batch_size, n_heads, seq_len, head_dim = x.shape
+
         x = x.transpose(1, 2)
-        x = x.contiguous().view(batch_size, seq_len, -1)
+        x = x.contiguous().view(batch_size, seq_len, n_heads * head_dim)
+
+        return x
+
+class TransformerBlock(nn.Module):
+    def __init__(self, d_model, n_heads, dropout=0.1):
+        super().__init__()
+
+        self.feed_forward = FeedForward(d_model)
+        self.layer_norm1 = LayerNorm(d_model)
+        self.layer_norm2 = LayerNorm(d_model)
+        self.dropout = nn.Dropout(dropout)
+        self.multi_head_attention = MultiHeadAttention(d_model, n_heads, dropout)
+
+    def forward(self, x):
+        attention = self.multi_head_attention(self.layer_norm1(x))
+        attention = self.dropout(attention)
+
+        x = x + attention
+
+        feed_forward = self.feed_forward(self.layer_norm2(x))
+        feed_forward = self.dropout(feed_forward)
+
+        x = x + feed_forward
 
         return x

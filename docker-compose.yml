@@ -10,7 +10,7 @@ services:
     profiles:
       - training
     command: >
-      python train.py
+      python scripts/train.py
       --context_size 512
       --d_model 256
       --n_layers 6

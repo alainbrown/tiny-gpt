@@ -39,11 +39,11 @@ This is the single development repository for both Hugging Face deployments:
 tiny-gpt/
 ├── src/tiny_gpt/              # Model, tokenizer, trainer, and HF integration
 ├── apps/gradio/               # Source deployed to the Hugging Face Space
+├── scripts/train.py           # Runs the training pipeline
 ├── scripts/export_model.py    # Builds the Hugging Face model artifact
 ├── checkpoints/
 │   ├── tiny_gpt/              # Local resumable training state (ignored)
 │   └── tiny_gpt_hub/          # Generated model release artifact (ignored)
-├── train.py
 ├── Dockerfile
 ├── docker-compose.yml
 └── pyproject.toml

@@ -3,12 +3,12 @@ import torch
 import os
 import spaces
 
-from src.generate import TextGenerator
-from src.hf_model import TinyGPTForCausalLM
+from tiny_gpt.generate import TextGenerator
+from tiny_gpt.hf_model import TinyGPTForCausalLM
 from transformers import PreTrainedTokenizerFast
 
 checkpoint_dir = os.environ.get("CHECKPOINT_DIR", "checkpoints/tiny_gpt")
-tokenizer_path = os.environ.get("TOKENIZER_PATH", "tiny_bpe_v2.json")
+tokenizer_path = os.environ.get("TOKENIZER_PATH", "checkpoints/tiny_gpt/tokenizer.json")
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 try:

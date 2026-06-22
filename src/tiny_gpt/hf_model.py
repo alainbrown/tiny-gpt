@@ -1,5 +1,5 @@
 from transformers import PretrainedConfig, PreTrainedModel
-from model import Model
+from tiny_gpt.model import Model
 
 class TinyGPTConfig(PretrainedConfig):
     model_type = "tiny_gpt"
@@ -27,8 +27,8 @@ class TinyGPTForCausalLM(PreTrainedModel):
             dropout=config.dropout
         )
         
-        # Proper Hugging Face method for tying weights
-        self.tie_weights()
+        # Proper Hugging Face initialization (v5.0+)
+        self.post_init()
 
     def get_input_embeddings(self):
         return self.core_model.token_embedding

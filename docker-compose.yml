@@ -6,8 +6,11 @@ services:
     # Ensure any downloaded Hugging Face models/datasets are cached in a local directory
     environment:
       - HF_HOME=/app/.cache/huggingface
+      - PYTHONUNBUFFERED=1
+    profiles:
+      - training
     command: >
-      python src/pipeline.py
+      python train.py
       --context_size 512
       --d_model 256
       --n_layers 6
@@ -25,3 +28,22 @@ services:
               count: all
               capabilities: [gpu]
 
+  gradio:
+    build: .
+    volumes:
+      - .:/app
+    environment:
+      - HF_HOME=/app/.cache/huggingface
+      - PYTHONUNBUFFERED=1
+    ports:
+      - "7860:7860"
+    command: python app.py
+    profiles:
+      - gradio
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]

@@ -4,11 +4,11 @@ import argparse
 import json
 from datasets import load_dataset
 from torch.utils.data import DataLoader
-from dataset import PackedDataset
-from bpe_tokenizer import BPETokenizer
+from tiny_gpt.dataset import PackedDataset
+from tiny_gpt.bpe_tokenizer import BPETokenizer
 from transformers import PreTrainedTokenizerFast
-from hf_model import TinyGPTForCausalLM, TinyGPTConfig
-from trainer import Trainer, TrainerConfig
+from tiny_gpt.hf_model import TinyGPTForCausalLM, TinyGPTConfig
+from tiny_gpt.trainer import Trainer, TrainerConfig
 
 def _make_bytes_to_unicode():
     bs = list(range(ord("!"), ord("~")+1)) + list(range(ord("¡"), ord("¬")+1)) + list(range(ord("®"), ord("ÿ")+1))

@@ -1,0 +1,16 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "tiny_gpt"
+version = "0.1.0"
+description = "An educational GPT implementation from scratch."
+dependencies = [
+    "torch",
+    "transformers",
+    "datasets",
+    "safetensors",
+    "gradio",
+    "spaces"
+]

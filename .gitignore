@@ -29,3 +29,6 @@ tiny_bpe_v2.json
 .Trashes
 ehthumbs.db
 Thumbs.db
+
+# Docker / Hugging Face Cache
+.cache/

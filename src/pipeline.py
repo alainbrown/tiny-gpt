@@ -66,6 +66,10 @@ def export_hf_tokenizer_json(tokenizer, path):
         }
     }
 
+    tokenizer_dir = os.path.dirname(path)
+    if tokenizer_dir:
+        os.makedirs(tokenizer_dir, exist_ok=True)
+        
     with open(path, "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, indent=2)
 
@@ -78,9 +82,10 @@ def load_checkpoint(optimizer, path):
     opt_state = torch.load(os.path.join(path, "optimizer.pt"))
     optimizer.load_state_dict(opt_state)
 
-def create_dataloaders(ds, tokenizer, context, batch_size, n_stories):
+def create_dataloaders(ds, tokenizer, context, batch_size, n_stories, start_story=0):
     encoding = []
-    for story in ds["train"][:n_stories]["text"]:
+    end_story = start_story + n_stories
+    for story in ds["train"][start_story:end_story]["text"]:
         ids = tokenizer.encode(story)
         ids.append(tokenizer.eos_token_id)
         encoding.extend(ids)
@@ -108,37 +113,40 @@ def main(args):
     if not os.path.exists(args.tokenizer_path):
         print("Training new tokenizer...")
         custom_tokenizer = BPETokenizer()
-        tokenizer_texts = ds["train"][:1000]["text"]
-        custom_tokenizer.train(tokenizer_texts, vocab_size=1024)
+        tokenizer_texts = ds["train"][:args.tokenizer_train_stories]["text"]
+        custom_tokenizer.train(tokenizer_texts, vocab_size=args.tokenizer_vocab_size)
         export_hf_tokenizer_json(custom_tokenizer, args.tokenizer_path)
         print(f"Tokenizer saved to {args.tokenizer_path}")
 
     print(f"Loading tokenizer from {args.tokenizer_path}...")
     tokenizer = PreTrainedTokenizerFast(tokenizer_file=args.tokenizer_path, eos_token="<EOS>")
 
-    # 3. Dataloaders
-    print("Creating dataloaders...")
-    train_loader, val_loader = create_dataloaders(
-        ds=ds, 
-        tokenizer=tokenizer, 
-        context=args.context_size, 
-        batch_size=args.batch_size, 
-        n_stories=args.n_stories
-    )
+    progress_file = os.path.join(args.checkpoint_dir, "TinyStories.progress")
+    start_story = 0
+    if os.path.exists(progress_file):
+        with open(progress_file, "r") as f:
+            start_story = int(f.read().strip())
+        print(f"Resuming from story {start_story}...")
 
-    # 4. Model Initialization
-    print("Initializing Model...")
-    vocab_size = len(tokenizer)
-    
-    config = TinyGPTConfig(
-        context_size=args.context_size,
-        vocab_size=vocab_size,
-        d_model=args.d_model,
-        n_layers=args.n_layers,
-        n_heads=args.n_heads,
-        dropout=args.dropout
-    )
-    model = TinyGPTForCausalLM(config)
+    # 3. Model Initialization
+    # If a checkpoint exists, always resume from it automatically
+    config_path = os.path.join(args.checkpoint_dir, "config.json")
+    if os.path.exists(config_path):
+        print(f"Resuming model from {args.checkpoint_dir}...")
+        model = TinyGPTForCausalLM.from_pretrained(args.checkpoint_dir)
+    else:
+        print("Initializing new Model...")
+        vocab_size = len(tokenizer)
+        
+        config = TinyGPTConfig(
+            context_size=args.context_size,
+            vocab_size=vocab_size,
+            d_model=args.d_model,
+            n_layers=args.n_layers,
+            n_heads=args.n_heads,
+            dropout=args.dropout
+        )
+        model = TinyGPTForCausalLM(config)
     
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     model.to(device)
@@ -155,24 +163,54 @@ def main(args):
 
     trainer = Trainer(
         model=model,
-        train_loader=train_loader,
-        val_loader=val_loader,
+        train_loader=None, # Will be set in loop
+        val_loader=None,
         config=train_config,
     )
 
-    # 6. Training Loop
-    print("Starting training...")
-    val_steps, train_losses, val_losses, throughput = trainer.train()
+    opt_path = os.path.join(args.checkpoint_dir, "optimizer.pt")
+    if os.path.exists(opt_path):
+        print("Resuming optimizer state...")
+        load_checkpoint(trainer.optimizer, args.checkpoint_dir)
 
-    # 7. Save Checkpoint
-    print(f"Training complete. Saving checkpoint to {args.checkpoint_dir}...")
-    save_checkpoint(model, trainer.optimizer, args.checkpoint_dir)
-    print("Done!")
+    # 5. Training Loop in Chunks
+    print("Starting continuous training...")
+    chunk_size = 25000  # Number of stories to process before saving progress
+    
+    while start_story < len(ds["train"]):
+        print(f"\n--- Processing stories {start_story} to {start_story + chunk_size} ---")
+        train_loader, val_loader = create_dataloaders(
+            ds=ds, 
+            tokenizer=tokenizer, 
+            context=args.context_size, 
+            batch_size=args.batch_size, 
+            n_stories=chunk_size,
+            start_story=start_story
+        )
+        
+        trainer.train_loader = train_loader
+        trainer.val_loader = val_loader
+
+        trainer.train()
+
+        # Save Checkpoint & Progress
+        save_checkpoint(model, trainer.optimizer, args.checkpoint_dir)
+        start_story += chunk_size
+        
+        with open(progress_file, "w") as f:
+            f.write(str(start_story))
+            
+        print(f"Checkpoint saved. Progress: {start_story} stories processed.")
+
+    print("Finished training on all stories!")
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Train TinyGPT")
-    parser.add_argument("--tokenizer_path", type=str, default="tiny_bpe_v2.json")
+    parser.add_argument("--tokenizer_path", type=str, default="checkpoints/tiny_gpt/tokenizer.json")
     parser.add_argument("--checkpoint_dir", type=str, default="checkpoints/tiny_gpt")
+    
+    parser.add_argument("--tokenizer_vocab_size", type=int, default=10000)
+    parser.add_argument("--tokenizer_train_stories", type=int, default=100000)
     
     parser.add_argument("--context_size", type=int, default=32)
     parser.add_argument("--d_model", type=int, default=64)
@@ -182,7 +220,7 @@ if __name__ == "__main__":
     
     parser.add_argument("--batch_size", type=int, default=16)
     parser.add_argument("--learning_rate", type=float, default=1e-3)
-    parser.add_argument("--n_stories", type=int, default=1000, help="Number of stories to train on")
+
     parser.add_argument("--eval_interval", type=int, default=1000)
     parser.add_argument("--eval_batches", type=int, default=100)
     

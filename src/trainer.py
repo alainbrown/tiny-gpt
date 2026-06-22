@@ -42,7 +42,7 @@ class Trainer:
             logits = self.model(x)
 
             loss = self.loss_fn(
-                logits.view(-1, self.model.vocab_size),
+                logits.view(-1, self.model.config.vocab_size),
                 y.view(-1)
             )
 
@@ -86,7 +86,7 @@ class Trainer:
                 logits = self.model(x)
 
                 loss = self.loss_fn(
-                    logits.view(-1, self.model.vocab_size),
+                    logits.view(-1, self.model.config.vocab_size),
                     y.view(-1)
                 )
                 losses.append(loss.item())

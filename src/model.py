@@ -34,7 +34,6 @@ class Model(nn.Module):
             [TransformerBlock(d_model, n_heads, dropout) for _ in range(n_layers)]
         )
         self.linear = nn.Linear(d_model, vocab_size, bias=False)
-        self.linear.weight = self.token_embedding.weight
         self.dropout = nn.Dropout(dropout)
         self.final_layer_norm = LayerNorm(d_model)
 

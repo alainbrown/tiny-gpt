@@ -1,0 +1,27 @@
+services:
+  training:
+    build: .
+    volumes:
+      - .:/app
+    # Ensure any downloaded Hugging Face models/datasets are cached in a local directory
+    environment:
+      - HF_HOME=/app/.cache/huggingface
+    command: >
+      python src/pipeline.py
+      --context_size 512
+      --d_model 256
+      --n_layers 6
+      --n_heads 8
+      --batch_size 64
+      --learning_rate 5e-4
+      --eval_interval 5000
+      --tokenizer_vocab_size 10000
+      --tokenizer_train_stories 100000
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+

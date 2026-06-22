@@ -1,19 +1,16 @@
 import torch
+from torch.utils.data import Dataset as TorchDataset
 
-class Dataset:
+class PackedDataset(TorchDataset):
+    def __init__(self, blocks):
+        self.blocks = blocks
 
-  def __init__(self, tokens, context):
-    self.tokens = tokens
-    self.context = context
+    def __getitem__(self, index):
+        seq = self.blocks[index]
+        return (
+            torch.tensor(seq[:-1], dtype=torch.long),
+            torch.tensor(seq[1:], dtype=torch.long),
+        )
 
-  def __getitem__(self, index):
-    x = self.tokens[index : index + self.context]
-    y = self.tokens[index + 1 : index + self.context + 1]
-
-    return (
-        torch.tensor(x, dtype=torch.long),
-        torch.tensor(y, dtype=torch.long),
-    )
-
-  def __len__(self):
-    return len(self.tokens) - self.context
+    def __len__(self):
+        return len(self.blocks)

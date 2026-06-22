@@ -4,7 +4,7 @@ import argparse
 import json
 from datasets import load_dataset
 from torch.utils.data import DataLoader
-from dataset import Dataset
+from dataset import PackedDataset
 from bpe_tokenizer import BPETokenizer
 from transformers import PreTrainedTokenizerFast
 from hf_model import TinyGPTForCausalLM, TinyGPTConfig
@@ -82,24 +82,38 @@ def load_checkpoint(optimizer, path):
     opt_state = torch.load(os.path.join(path, "optimizer.pt"))
     optimizer.load_state_dict(opt_state)
 
-def create_dataloaders(ds, tokenizer, context, batch_size, n_stories, start_story=0):
-    encoding = []
+def create_dataloaders(ds, tokenizer, context_size, batch_size, n_stories, start_story=0):
     end_story = start_story + n_stories
-    for story in ds["train"][start_story:end_story]["text"]:
-        ids = tokenizer.encode(story)
-        ids.append(tokenizer.eos_token_id)
-        encoding.extend(ids)
-
-    train_ds = Dataset(encoding, context=context)
+    texts = ds["train"][start_story:end_story]["text"]
+    
+    print(f"Tokenizing chunk of {len(texts)} stories in bulk...")
+    # Fast bulk tokenization using Rust backend
+    encoded = tokenizer(texts, add_special_tokens=False)["input_ids"]
+    
+    concatenated = []
+    for ids in encoded:
+        concatenated.extend(ids)
+        concatenated.append(tokenizer.eos_token_id)
+        
+    # Pack is context_size + 1
+    block_size = context_size + 1
+    total_length = (len(concatenated) // block_size) * block_size
+    
+    print("Packing tokens into blocks...")
+    blocks = [concatenated[i : i + block_size] for i in range(0, total_length, block_size)]
+    train_ds = PackedDataset(blocks)
     train_loader = DataLoader(train_ds, batch_size=batch_size, shuffle=True)
 
-    encoding = []
-    for story in ds["validation"][:n_stories]["text"]:
-        ids = tokenizer.encode(story)
-        ids.append(tokenizer.eos_token_id)
-        encoding.extend(ids)
-
-    val_ds = Dataset(encoding, context=context)
+    val_texts = ds["validation"][:n_stories]["text"]
+    val_encoded = tokenizer(val_texts, add_special_tokens=False)["input_ids"]
+    val_concat = []
+    for ids in val_encoded:
+        val_concat.extend(ids)
+        val_concat.append(tokenizer.eos_token_id)
+        
+    v_total = (len(val_concat) // block_size) * block_size
+    val_blocks = [val_concat[i : i + block_size] for i in range(0, v_total, block_size)]
+    val_ds = PackedDataset(val_blocks)
     val_loader = DataLoader(val_ds, batch_size=batch_size)
 
     return train_loader, val_loader
@@ -129,7 +143,6 @@ def main(args):
         print(f"Resuming from story {start_story}...")
 
     # 3. Model Initialization
-    # If a checkpoint exists, always resume from it automatically
     config_path = os.path.join(args.checkpoint_dir, "config.json")
     if os.path.exists(config_path):
         print(f"Resuming model from {args.checkpoint_dir}...")
@@ -152,7 +165,7 @@ def main(args):
     model.to(device)
     print(f"Model moved to {device}")
 
-    # 5. Training Setup
+    # 4. Trainer Setup
     train_config = TrainerConfig(
         batch_size=args.batch_size,
         learning_rate=args.learning_rate,
@@ -163,8 +176,6 @@ def main(args):
 
     trainer = Trainer(
         model=model,
-        train_loader=None, # Will be set in loop
-        val_loader=None,
         config=train_config,
     )
 
@@ -174,28 +185,41 @@ def main(args):
         load_checkpoint(trainer.optimizer, args.checkpoint_dir)
 
     # 5. Training Loop in Chunks
-    print("Starting continuous training...")
-    chunk_size = 25000  # Number of stories to process before saving progress
+    print(f"Starting continuous training in chunks of {args.chunk_size} stories...")
     
     while start_story < len(ds["train"]):
-        print(f"\n--- Processing stories {start_story} to {start_story + chunk_size} ---")
+        print(f"\n--- Processing stories {start_story} to {start_story + args.chunk_size} ---")
         train_loader, val_loader = create_dataloaders(
             ds=ds, 
             tokenizer=tokenizer, 
-            context=args.context_size, 
+            context_size=args.context_size, 
             batch_size=args.batch_size, 
-            n_stories=chunk_size,
+            n_stories=args.chunk_size,
             start_story=start_story
         )
         
-        trainer.train_loader = train_loader
-        trainer.val_loader = val_loader
+        train_iter = iter(train_loader)
+        
+        while True:
+            # 1. Train for eval_interval steps
+            train_losses, tp_sec = trainer.train_steps(train_iter, num_steps=args.eval_interval)
+            
+            if len(train_losses) == 0:
+                print("Chunk exhausted!")
+                break
+                
+            # 2. Evaluate
+            val_iter = iter(val_loader)
+            val_loss = trainer.estimate_loss(val_iter)
+            print(f"*** EVALUATION | val loss: {val_loss:.4f} ***")
 
-        trainer.train()
+            if len(train_losses) < args.eval_interval:
+                print("Chunk exhausted!")
+                break
 
         # Save Checkpoint & Progress
+        start_story += args.chunk_size
         save_checkpoint(model, trainer.optimizer, args.checkpoint_dir)
-        start_story += chunk_size
         
         with open(progress_file, "w") as f:
             f.write(str(start_story))
@@ -211,6 +235,8 @@ if __name__ == "__main__":
     
     parser.add_argument("--tokenizer_vocab_size", type=int, default=10000)
     parser.add_argument("--tokenizer_train_stories", type=int, default=100000)
+    
+    parser.add_argument("--chunk_size", type=int, default=25000)
     
     parser.add_argument("--context_size", type=int, default=32)
     parser.add_argument("--d_model", type=int, default=64)

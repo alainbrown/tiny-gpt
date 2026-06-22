@@ -18,23 +18,41 @@ A simple PyTorch `Dataset` utility:
 - Consumes a contiguous stream of token IDs and chunks them into overlapping `(context, target)` pairs for autoregressive next-token prediction.
 - Seamlessly integrates with PyTorch's `DataLoader` for batching and shuffling during training.
 
-### 3. Transformer Model (`model.py`)
+### 3. Transformer Model (`src/model.py` & `src/hf_model.py`)
 A PyTorch implementation of a decoder-only transformer network:
-- **Embeddings:** Learned token embeddings and absolute position embeddings.
-- **Transformer Blocks:** Stacked layers utilizing the Pre-LayerNorm architecture for better training stability.
-- **Causal Self-Attention:** A from-scratch implementation of masked self-attention ensuring that the model cannot "look ahead" at future tokens. *(Currently implements single-head attention)*
-- **Feed-Forward Network:** A standard two-layer MLP with a GELU activation function.
-- **Custom LayerNorm:** A manual implementation of Layer Normalization.
-- **Weight Tying:** The weights of the final output projection layer are tied to the input token embeddings, significantly saving parameters.
+- **Core Math (`model.py`):** Learned token/position embeddings, Pre-LayerNorm, Multi-Head Attention, and a standard two-layer MLP with a GELU activation function.
+- **Hugging Face Wrapper (`hf_model.py`):** The pure mathematical model is cleanly wrapped in a `PreTrainedModel` and `PretrainedConfig` interface, granting access to the industry-standard `.save_pretrained()` and `.from_pretrained()` workflow.
 
-### 4. Experimental Notebooks (`notebooks/`)
-The `notebooks/` directory contains scratchpads where the model and training loops were prototyped on the [TinyStories](https://huggingface.co/datasets/roneneldan/TinyStories) dataset.
-- `tiny_gpt_v1.py`: Initial experiments outlining the minimal components, including trivial character-level tokenization vs BPE, sanity checks, basic training loops, and an initial generative inference script.
-- `tiny_gpt_v2.py`: A more refined iteration featuring:
-  - Integration of the final `BPETokenizer`.
-  - An encapsulated `Trainer` class supporting GPU (`cuda`), evaluation intervals, loss tracking, and throughput (tokens/sec) calculations.
-  - Generative text sampling utilities with parameters for temperature, top-k filtering, and greedy decoding.
-  - Visualization of the training/validation loss curves.
+### 4. Training Pipeline (`src/pipeline.py` & `src/trainer.py`)
+A complete, isolated training script capable of training the model on the [TinyStories](https://huggingface.co/datasets/roneneldan/TinyStories) dataset.
+- Features a custom `Trainer` class that exposes the raw PyTorch backpropagation loop while abstracting away boilerplate device routing and configuration via `TrainerConfig`.
+- Exports checkpoints perfectly compatible with Hugging Face (`safetensors` + `config.json`).
 
-## Goal
-This repository serves as a learning sandbox. The intentional choice to avoid multi-head attention abstractions (by using a flat single-head projection initially) and built-in normalization functions ensures a comprehensive understanding of the mathematical and architectural underpinnings of modern Large Language Models.
+### 5. Gradio UI for HF Spaces (`app.py`)
+A fully functional `Gradio` ChatInterface hooked up to the token-by-token generation logic in `src/generate.py`. It is structured to be deployed instantly as a Hugging Face Space with ZeroGPU support (`@spaces.GPU`).
+
+## How to Run
+
+### Install Dependencies
+```bash
+pip install -r requirements.txt
+```
+
+### Train the Model
+You can start a training run using the pipeline script. This will download the TinyStories dataset, train a new BPE tokenizer, train the model, and save a Hugging Face checkpoint.
+```bash
+export PYTHONPATH=.
+python src/pipeline.py \
+    --checkpoint_dir checkpoints/tiny_gpt \
+    --batch_size 32 \
+    --learning_rate 1e-3 \
+    --n_stories 1000 \
+    --eval_interval 500
+```
+
+### Launch the UI
+After training, launch the interactive Gradio demo:
+```bash
+export PYTHONPATH=.
+python app.py
+```

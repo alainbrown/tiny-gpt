@@ -2,13 +2,14 @@ import os
 import math
 
 import gradio as gr
+import spaces
 import torch
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
 
 MODEL_ID = os.environ.get("MODEL_ID", "alainbrown/tiny-gpt")
 MODEL_REVISION = os.environ.get("MODEL_REVISION", "main")
-DEVICE = torch.device("cpu")
+DEVICE = torch.device("cuda")
 
 
 def load_model():
@@ -72,6 +73,7 @@ model, tokenizer = load_model()
 print(f"Loaded {MODEL_ID}@{MODEL_REVISION} on {DEVICE}.")
 
 
+@spaces.GPU(duration=60)
 def stream_chat(message, history, temperature, top_k, max_new_tokens):
     message = (message or "").strip()
     if not message:

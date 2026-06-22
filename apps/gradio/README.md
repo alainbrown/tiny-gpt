@@ -5,10 +5,10 @@ colorFrom: blue
 colorTo: purple
 sdk: gradio
 sdk_version: 6.19.0
+python_version: 3.12.12
 app_file: app.py
 pinned: false
 license: mit
-suggested_hardware: cpu-basic
 models:
   - alainbrown/tiny-gpt
 ---

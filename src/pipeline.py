@@ -137,10 +137,17 @@ def main(args):
 
     progress_file = os.path.join(args.checkpoint_dir, "TinyStories.progress")
     start_story = 0
+    global_step = 0
     if os.path.exists(progress_file):
         with open(progress_file, "r") as f:
-            start_story = int(f.read().strip())
-        print(f"Resuming from story {start_story}...")
+            content = f.read().strip()
+            if "{" in content:
+                state = json.loads(content)
+                start_story = state.get("start_story", 0)
+                global_step = state.get("global_step", 0)
+            else:
+                start_story = int(content)
+        print(f"Resuming from story {start_story}, global step {global_step}...")
 
     # 3. Model Initialization
     config_path = os.path.join(args.checkpoint_dir, "config.json")
@@ -169,6 +176,15 @@ def main(args):
     train_config = TrainerConfig(
         batch_size=args.batch_size,
         learning_rate=args.learning_rate,
+        weight_decay=args.weight_decay,
+        beta1=args.beta1,
+        beta2=args.beta2,
+        eps=args.eps,
+        grad_clip=args.grad_clip,
+        grad_accum_steps=args.grad_accum_steps,
+        warmup_steps=args.warmup_steps,
+        max_steps=args.max_steps,
+        min_lr=args.min_lr,
         eval_interval=args.eval_interval,
         eval_batches=args.eval_batches,
         checkpoint_dir=args.checkpoint_dir
@@ -202,7 +218,7 @@ def main(args):
         
         while True:
             # 1. Train for eval_interval steps
-            train_losses, tp_sec = trainer.train_steps(train_iter, num_steps=args.eval_interval)
+            train_losses, tp_sec, global_step = trainer.train_steps(train_iter, num_steps=args.eval_interval, global_step=global_step)
             
             if len(train_losses) == 0:
                 print("Chunk exhausted!")
@@ -222,9 +238,9 @@ def main(args):
         save_checkpoint(model, trainer.optimizer, args.checkpoint_dir)
         
         with open(progress_file, "w") as f:
-            f.write(str(start_story))
+            json.dump({"start_story": start_story, "global_step": global_step}, f)
             
-        print(f"Checkpoint saved. Progress: {start_story} stories processed.")
+        print(f"Checkpoint saved. Progress: {start_story} stories processed. Global step: {global_step}")
 
     print("Finished training on all stories!")
 
@@ -246,6 +262,16 @@ if __name__ == "__main__":
     
     parser.add_argument("--batch_size", type=int, default=16)
     parser.add_argument("--learning_rate", type=float, default=1e-3)
+    parser.add_argument("--weight_decay", type=float, default=0.1)
+    parser.add_argument("--beta1", type=float, default=0.9)
+    parser.add_argument("--beta2", type=float, default=0.95)
+    parser.add_argument("--eps", type=float, default=1e-8)
+    parser.add_argument("--grad_clip", type=float, default=1.0)
+    
+    parser.add_argument("--grad_accum_steps", type=int, default=1)
+    parser.add_argument("--warmup_steps", type=int, default=1000)
+    parser.add_argument("--max_steps", type=int, default=100000)
+    parser.add_argument("--min_lr", type=float, default=1e-4)
 
     parser.add_argument("--eval_interval", type=int, default=1000)
     parser.add_argument("--eval_batches", type=int, default=100)

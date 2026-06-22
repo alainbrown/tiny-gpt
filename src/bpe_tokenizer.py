@@ -1,5 +1,4 @@
 from collections import Counter
-import json
 from itertools import islice
 
 class BPETokenizer:
@@ -10,9 +9,6 @@ class BPETokenizer:
         # Special tokens live outside byte range.
         self.eos_id = 256
         self.vocab[self.eos_id] = b""
-        
-        self.byte_encoder = self.bytes_to_unicode()
-        self.byte_decoder = {v: k for k, v in self.byte_encoder.items()}
 
         # Dictionary mapping pair to new_id:
         # {(left_id, right_id): new_id}
@@ -103,75 +99,4 @@ class BPETokenizer:
 
         return b"".join(chunks).decode("utf-8", errors="replace")
 
-    def save(self, path):
-        vocab_export = {}
-        for idx, token_bytes in self.vocab.items():
-            if idx == self.eos_id:
-                continue
-            token_str = "".join([self.byte_encoder[b] for b in token_bytes])
-            vocab_export[token_str] = idx
 
-        merges_export = []
-        sorted_merges = sorted(self.merges.items(), key=lambda x: x[1])
-        for (left, right), new_id in sorted_merges:
-            left_str = "".join([self.byte_encoder[b] for b in self.vocab[left]])
-            right_str = "".join([self.byte_encoder[b] for b in self.vocab[right]])
-            merges_export.append(f"{left_str} {right_str}")
-
-        data = {
-            "version": "1.0",
-            "added_tokens": [
-                {"id": self.eos_id, "content": "<EOS>", "special": True}
-            ],
-            "model": {
-                "type": "BPE",
-                "vocab": vocab_export,
-                "merges": merges_export
-            }
-        }
-
-        with open(path, "w", encoding="utf-8") as f:
-            json.dump(data, f, ensure_ascii=False, indent=2)
-
-    @classmethod
-    def load(cls, path):
-        tokenizer = cls()
-
-        with open(path, "r", encoding="utf-8") as f:
-            data = json.load(f)
-
-        tokenizer.eos_id = data["added_tokens"][0]["id"]
-        
-        vocab_import = data["model"]["vocab"]
-        tokenizer.vocab = {}
-        for token_str, idx in vocab_import.items():
-            token_bytes = bytes([tokenizer.byte_decoder[c] for c in token_str])
-            tokenizer.vocab[idx] = token_bytes
-            
-        tokenizer.vocab[tokenizer.eos_id] = b""
-        
-        tokenizer.merges = {}
-        for merge_str in data["model"]["merges"]:
-            left_str, right_str = merge_str.split(" ")
-            merged_str = left_str + right_str
-            
-            left_id = vocab_import[left_str]
-            right_id = vocab_import[right_str]
-            new_id = vocab_import[merged_str]
-            
-            tokenizer.merges[(left_id, right_id)] = new_id
-
-        return tokenizer
-
-    @staticmethod
-    def bytes_to_unicode():
-        bs = list(range(ord("!"), ord("~")+1)) + list(range(ord("¡"), ord("¬")+1)) + list(range(ord("®"), ord("ÿ")+1))
-        cs = bs[:]
-        n = 0
-        for b in range(2**8):
-            if b not in bs:
-                bs.append(b)
-                cs.append(2**8 + n)
-                n += 1
-        cs = [chr(n) for n in cs]
-        return dict(zip(bs, cs))

@@ -95,13 +95,4 @@ class Trainer:
 
         return statistics.mean(losses)
 
-    def save_checkpoint(self, path):
-        os.makedirs(path, exist_ok=True)
-        
-        self.model.save_pretrained(path)
-        torch.save(self.optimizer.state_dict(), os.path.join(path, "optimizer.pt"))
 
-    def load_checkpoint(self, path):
-        # The model is loaded externally now using from_pretrained, so we just load optimizer
-        opt_state = torch.load(os.path.join(path, "optimizer.pt"))
-        self.optimizer.load_state_dict(opt_state)

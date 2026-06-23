@@ -2,7 +2,7 @@
 
 Tiny GPT is an educational decoder-only language model built from first
 principles in PyTorch. The current model is a small story-completion model
-trained on [TinyStories](https://huggingface.co/datasets/roneneldan/TinyStories).
+trained on [skeskinen/TinyStories-hf](https://huggingface.co/datasets/skeskinen/TinyStories-hf).
 
 The production model uses PyTorch scaled dot-product attention, fused QKV
 projection, and native LayerNorm. A separate explicit reference model remains
@@ -10,12 +10,12 @@ available for learning, numerical comparison, and correctness tests.
 
 - Source: <https://github.com/alainbrown/tiny-gpt>
 - Model: <https://huggingface.co/alainbrown/tiny-gpt>
-- ZeroGPU demo: <https://huggingface.co/spaces/alainbrown/tiny-gpt-demo>
+- Storyteller demo: <https://huggingface.co/spaces/alainbrown/tiny-gpt-demo>
 
 ## Current status
 
 - A complete byte-level BPE tokenizer and decoder-only Transformer
-- A published approximately 10M-parameter TinyStories checkpoint
+- A published 24.28M-parameter TinyStories storyteller checkpoint
 - Resumable training and Hugging Face export
 - Reproducible validation and generation evaluation
 - Forward/backward throughput and memory benchmarking
@@ -23,19 +23,31 @@ available for learning, numerical comparison, and correctness tests.
 - SDPA attention with fused QKV projection
 
 The model execution path is optimized, while `torch.compile`, fused AdamW,
-and KV-cached generation remain future improvements.
+KV-cached generation, and broader non-story pretraining remain future
+improvements.
 
 ## Architecture
 
-The published model has approximately 10 million parameters:
+The published model has 24,282,624 tied parameters:
 
 | Setting | Value |
+| --- | --- |
+| Context length | 1,024 tokens |
+| Vocabulary size | 16,000 |
+| Hidden size | 384 |
+| Transformer layers | 10 |
+| Attention heads | 6 |
+| Training dataset | `skeskinen/TinyStories-hf` |
+| Training length | 3 epochs |
+
+Latest full evaluation on 5,000 TinyStories validation examples:
+
+| Metric | Value |
 | --- | ---: |
-| Context length | 512 tokens |
-| Vocabulary size | 10,000 |
-| Hidden size | 256 |
-| Transformer layers | 6 |
-| Attention heads | 8 |
+| Validation loss | 1.4934 |
+| Validation perplexity | 4.4521 |
+| Evaluation tokens | 973,824 |
+| Generated samples | 72 |
 
 The implementation includes:
 
@@ -119,7 +131,7 @@ pip install -e .
 ```
 
 The Space uses separate dependencies in `apps/gradio/requirements.txt` because
-its ZeroGPU runtime differs from the local training image.
+the public demo environment differs from the local CUDA training image.
 
 ## Train
 
@@ -136,10 +148,10 @@ directly with `--num-examples`:
 
 ```bash
 python scripts/train_tokenizer.py \
-  --dataset roneneldan/TinyStories \
+  --dataset skeskinen/TinyStories-hf \
   --split train \
   --text-column text \
-  --vocab-size 10000 \
+  --vocab-size 16000 \
   --num-examples 100000 \
   --output checkpoints/tiny_gpt/tokenizer.json
 ```
@@ -305,7 +317,7 @@ you do not control.
 
 ## Demo
 
-The public demo runs on Hugging Face ZeroGPU:
+The public demo runs on Hugging Face Spaces:
 
 <https://huggingface.co/spaces/alainbrown/tiny-gpt-demo>
 
@@ -315,10 +327,9 @@ Its supported runtime is pinned in `apps/gradio`:
 - PyTorch 2.8.0
 - Gradio 6.19.0
 - Transformers 5.12.1
-- Spaces 0.50.4
 
-The model is placed on CUDA during startup, as required by ZeroGPU, and the
-streaming generation callback requests GPU access with `@spaces.GPU`.
+The currently published Space is running on `cpu-basic`. The app automatically
+uses CUDA when it is available, otherwise it runs on CPU.
 
 To run the same app locally with Docker and a CUDA-capable host:
 

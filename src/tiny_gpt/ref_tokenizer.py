@@ -1,6 +1,7 @@
 from collections import Counter
 from itertools import islice
 
+
 class BPETokenizer:
     def __init__(self):
         # Base vocabulary: every possible byte.
@@ -36,7 +37,7 @@ class BPETokenizer:
                 i += 2
             else:
                 out.append(ids[i])
-                i +=1
+                i += 1
         return out
 
     def train(self, texts, vocab_size):
@@ -75,8 +76,11 @@ class BPETokenizer:
         ids = self.text_to_ids(text)
         while len(ids) >= 2:
             pairs_zip = zip(ids, islice(ids, 1, None))
-            pair = min(pairs_zip, key=lambda p: self.merges.get(p, float("inf")))
-            
+            pair = min(
+                pairs_zip,
+                key=lambda p: self.merges.get(p, float("inf")),
+            )
+
             if pair not in self.merges:
                 break
 
@@ -98,5 +102,3 @@ class BPETokenizer:
             chunks.append(self.vocab[idx])
 
         return b"".join(chunks).decode("utf-8", errors="replace")
-
-

@@ -1,5 +1,5 @@
 ---
-title: Tiny GPT
+title: Tiny GPT Storyteller
 emoji: 📖
 colorFrom: blue
 colorTo: purple
@@ -13,11 +13,12 @@ models:
   - alainbrown/tiny-gpt
 ---
 
-# Tiny GPT Demo
+# Tiny GPT Storyteller
 
-Interactive text generation with
+Prompt-based story generation with
 [alainbrown/tiny-gpt](https://huggingface.co/alainbrown/tiny-gpt), an
 educational decoder-only Transformer trained from scratch on TinyStories.
 
-The model is intentionally small and experimental. Generated text may be
-repetitive, incoherent, or inappropriate.
+This is a generation form, not a chat assistant. The model is intentionally
+small and experimental. Generated text may be repetitive, incoherent, or
+inappropriate.

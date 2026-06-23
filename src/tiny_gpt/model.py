@@ -1,24 +1,18 @@
-import math
 import torch
+import torch.nn.functional as F
 from torch import nn
 
-"""
-token embeddings
-learned positional embeddings
-causal self-attention
-feed-forward network
-custom LayerNorm
-residual connections
-stacked transformer blocks
-GELU
-dropout
-Pre-LayerNorm
-tied token embedding/output projection weights
-multi-head attention
 
-"""
-class Model(nn.Module):
-    def __init__(self, context_size, vocab_size, d_model, n_layers, n_heads, dropout=0.1):
+class GPTModel(nn.Module):
+    def __init__(
+        self,
+        context_size,
+        vocab_size,
+        d_model,
+        n_layers,
+        n_heads,
+        dropout=0.1,
+    ):
         super().__init__()
 
         self.context_size = context_size
@@ -31,136 +25,166 @@ class Model(nn.Module):
         self.token_embedding = nn.Embedding(vocab_size, d_model)
         self.position_embedding = nn.Embedding(context_size, d_model)
         self.transformer_blocks = nn.ModuleList(
-            [TransformerBlock(d_model, n_heads, dropout) for _ in range(n_layers)]
+            [
+                TransformerBlock(d_model, n_heads, dropout)
+                for _ in range(n_layers)
+            ]
         )
         self.linear = nn.Linear(d_model, vocab_size, bias=False)
         self.dropout = nn.Dropout(dropout)
-        self.final_layer_norm = LayerNorm(d_model)
+        self.final_layer_norm = nn.LayerNorm(d_model, eps=1e-6)
 
     def forward(self, x):
-        B, T = x.shape
+        _, sequence_length = x.shape
 
-        assert T <= self.context_size, "Input sequence is longer than context_size"
+        assert sequence_length <= self.context_size, (
+            "Input sequence is longer than context_size"
+        )
 
-        positions = torch.arange(T, device=x.device)
-
+        positions = torch.arange(sequence_length, device=x.device)
         position = self.position_embedding(positions)
         token = self.token_embedding(x)
 
-        x = token + position
-        x = self.dropout(x)
-
+        x = self.dropout(token + position)
         for block in self.transformer_blocks:
             x = block(x)
 
         x = self.final_layer_norm(x)
-        logits = self.linear(x)
+        return self.linear(x)
 
-        return logits
 
 class FeedForward(nn.Module):
     def __init__(self, d_model):
         super().__init__()
         self.ff1 = nn.Linear(d_model, 4 * d_model)
-        self.ff2 = nn.Linear(d_model * 4, d_model)
+        self.ff2 = nn.Linear(4 * d_model, d_model)
 
     def forward(self, x):
-        x = self.ff1(x)
-        x = nn.functional.gelu(x)
-        x = self.ff2(x)
-        return x
+        return self.ff2(F.gelu(self.ff1(x)))
 
-class LayerNorm(nn.Module):
-    def __init__(self, d_model):
-        super().__init__()
-        self.gamma = nn.Parameter(torch.ones(d_model))
-        self.beta = nn.Parameter(torch.zeros(d_model))
-
-    def forward(self, x):
-        mean = x.mean(dim=-1, keepdim=True)
-        diff = (x - mean)
-        variance = (diff * diff).mean(dim=-1, keepdim=True)
-        normalized = diff / torch.sqrt(variance + 1e-6)
-        return self.gamma * normalized + self.beta
-
-class MultiHeadAttention(nn.Module):
-    def __init__(self, d_model, n_heads, dropout=0.1):
-        super().__init__()
-
-        assert d_model % n_heads == 0, "d_model must be divisible by n_heads"
-
-        self.n_heads = n_heads
-        self.head_dim = d_model // n_heads
-        self.scale = math.sqrt(self.head_dim)
-
-        self.query = nn.Linear(d_model, d_model)
-        self.key = nn.Linear(d_model, d_model)
-        self.value = nn.Linear(d_model, d_model)
-
-        self.head_proj = nn.Linear(d_model, d_model)
-
-    def forward(self, x):
-        query = self.split_heads(self.query(x))
-        key = self.split_heads(self.key(x))
-        value = self.split_heads(self.value(x))
-
-        scores = torch.matmul(query, key.transpose(-2, -1))
-        scores = scores / self.scale
-
-        context_size = query.shape[2]
-
-        mask = torch.tril(
-            torch.ones(context_size, context_size, device=query.device)
-        )
-        mask = mask.view(1, 1, context_size, context_size)
-
-        scores = scores.masked_fill(mask == 0, float("-inf"))
-
-        weights = torch.nn.functional.softmax(scores, dim=-1)
-
-        attended = torch.matmul(weights, value)
-
-        attended = self.combine_heads(attended)
-
-        attended = self.head_proj(attended)
-
-        return attended
-
-    def split_heads(self, x):
-        batch_size, seq_len, d_model = x.shape
-
-        x = x.reshape(batch_size, seq_len, self.n_heads, self.head_dim)
-        x = x.transpose(1, 2)
-
-        return x
-
-    def combine_heads(self, x):
-        batch_size, n_heads, seq_len, head_dim = x.shape
-
-        x = x.transpose(1, 2)
-        x = x.contiguous().view(batch_size, seq_len, n_heads * head_dim)
-
-        return x
 
 class TransformerBlock(nn.Module):
     def __init__(self, d_model, n_heads, dropout=0.1):
         super().__init__()
 
         self.feed_forward = FeedForward(d_model)
-        self.layer_norm1 = LayerNorm(d_model)
-        self.layer_norm2 = LayerNorm(d_model)
+        self.layer_norm1 = nn.LayerNorm(d_model, eps=1e-6)
+        self.layer_norm2 = nn.LayerNorm(d_model, eps=1e-6)
         self.dropout = nn.Dropout(dropout)
-        self.multi_head_attention = MultiHeadAttention(d_model, n_heads, dropout)
+        self.multi_head_attention = MultiHeadAttention(
+            d_model=d_model,
+            n_heads=n_heads,
+            dropout=dropout,
+        )
 
     def forward(self, x):
         attention = self.multi_head_attention(self.layer_norm1(x))
-        attention = self.dropout(attention)
-
-        x = x + attention
+        x = x + self.dropout(attention)
 
         feed_forward = self.feed_forward(self.layer_norm2(x))
-        feed_forward = self.dropout(feed_forward)
+        return x + self.dropout(feed_forward)
 
-        x = x + feed_forward
 
-        return x
+class MultiHeadAttention(nn.Module):
+    def __init__(self, d_model, n_heads, dropout=0.1):
+        super().__init__()
+
+        assert d_model % n_heads == 0, (
+            "d_model must be divisible by n_heads"
+        )
+
+        self.n_heads = n_heads
+        self.head_dim = d_model // n_heads
+        self.dropout_p = dropout
+
+        self.qkv = nn.Linear(d_model, 3 * d_model)
+        self.head_proj = nn.Linear(d_model, d_model)
+
+    def forward(self, x):
+        query, key, value = self.qkv(x).chunk(3, dim=-1)
+        query = self.split_heads(query)
+        key = self.split_heads(key)
+        value = self.split_heads(value)
+
+        attended = F.scaled_dot_product_attention(
+            query,
+            key,
+            value,
+            dropout_p=self.dropout_p if self.training else 0.0,
+            is_causal=True,
+        )
+        return self.head_proj(self.combine_heads(attended))
+
+    def split_heads(self, x):
+        batch_size, sequence_length, _ = x.shape
+        x = x.reshape(
+            batch_size,
+            sequence_length,
+            self.n_heads,
+            self.head_dim,
+        )
+        return x.transpose(1, 2)
+
+    def combine_heads(self, x):
+        batch_size, n_heads, sequence_length, head_dim = x.shape
+        x = x.transpose(1, 2)
+        return x.contiguous().view(
+            batch_size,
+            sequence_length,
+            n_heads * head_dim,
+        )
+
+
+Model = GPTModel
+
+
+def convert_reference_state_dict(state_dict):
+    """Convert reference Q/K/V and LayerNorm keys to the optimized layout."""
+    converted = dict(state_dict)
+
+    for key in list(converted):
+        if key.endswith(".gamma"):
+            converted[key.removesuffix(".gamma") + ".weight"] = converted.pop(
+                key
+            )
+        elif key.endswith(".beta"):
+            converted[key.removesuffix(".beta") + ".bias"] = converted.pop(
+                key
+            )
+
+    attention_suffix = ".multi_head_attention.query.weight"
+    query_weight_keys = [
+        key for key in converted if key.endswith(attention_suffix)
+    ]
+    for query_weight_key in query_weight_keys:
+        prefix = query_weight_key.removesuffix("query.weight")
+        qkv_weight_key = prefix + "qkv.weight"
+        qkv_bias_key = prefix + "qkv.bias"
+
+        converted[qkv_weight_key] = torch.cat(
+            [
+                converted.pop(prefix + "query.weight"),
+                converted.pop(prefix + "key.weight"),
+                converted.pop(prefix + "value.weight"),
+            ],
+            dim=0,
+        )
+        converted[qkv_bias_key] = torch.cat(
+            [
+                converted.pop(prefix + "query.bias"),
+                converted.pop(prefix + "key.bias"),
+                converted.pop(prefix + "value.bias"),
+            ],
+            dim=0,
+        )
+
+    return converted
+
+__all__ = [
+    "convert_reference_state_dict",
+    "FeedForward",
+    "GPTModel",
+    "Model",
+    "MultiHeadAttention",
+    "TransformerBlock",
+]

@@ -439,6 +439,9 @@ model = GPT(
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 model.to(device)
 
+# PyTorch .to(device) unties parameters; we must manually re-tie them on the GPU
+model.linear.weight = model.token_embedding.weight
+
 train_loader, val_loader = create_dataloaders(ds, context, batch_size, 1000)
 optimizer = torch.optim.AdamW(model.parameters(), lr=learning_rate)
 loss_fn = torch.nn.CrossEntropyLoss()

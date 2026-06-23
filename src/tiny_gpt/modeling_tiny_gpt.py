@@ -4,16 +4,17 @@ from transformers.generation import GenerationMixin
 from transformers.modeling_outputs import CausalLMOutput
 
 from .configuration_tiny_gpt import TinyGPTConfig
-from .model import Model
+from .model import GPTModel
 
 
 class TinyGPTForCausalLM(PreTrainedModel, GenerationMixin):
     config_class = TinyGPTConfig
     main_input_name = "input_ids"
+    _tied_weights_keys = {"core_model.linear.weight": "core_model.token_embedding.weight"}
 
     def __init__(self, config):
         super().__init__(config)
-        self.core_model = Model(
+        self.core_model = GPTModel(
             context_size=config.context_size,
             vocab_size=config.vocab_size,
             d_model=config.d_model,

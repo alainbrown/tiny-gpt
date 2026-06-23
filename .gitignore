@@ -17,9 +17,13 @@ __pycache__/
 *.pt
 *.safetensors
 checkpoints/
+runs/
 
 # Generated tokenizers
 tiny_bpe_v2.json
+
+# Local Codex instructions
+AGENTS.md
 
 # OS generated files
 .DS_Store

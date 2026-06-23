@@ -1,8 +1,35 @@
 services:
+  aim:
+    image: aimstack/aim
+    volumes:
+      - aim-data:/opt/aim
+    ports:
+      - "43800:43800"
+    profiles:
+      - metrics
+
+  tokenizer-training:
+    build: .
+    volumes:
+      - .:/app
+    environment:
+      - HF_HOME=/app/.cache/huggingface
+      - PYTHONUNBUFFERED=1
+    profiles:
+      - tools
+    command: >
+      python scripts/train_tokenizer.py
+      --dataset skeskinen/TinyStories-hf
+      --split train
+      --text-column text
+      --vocab-size 16000
+      --output checkpoints/tiny_gpt/tokenizer.json
+
   training:
     build: .
     volumes:
       - .:/app
+      - aim-data:/opt/aim
     # Ensure any downloaded Hugging Face models/datasets are cached in a local directory
     environment:
       - HF_HOME=/app/.cache/huggingface
@@ -11,15 +38,25 @@ services:
       - training
     command: >
       python scripts/train.py
-      --context_size 512
-      --d_model 256
-      --n_layers 6
-      --n_heads 8
-      --batch_size 64
-      --learning_rate 5e-4
-      --eval_interval 5000
-      --tokenizer_vocab_size 10000
-      --tokenizer_train_stories 100000
+      --dataset skeskinen/TinyStories-hf
+      --context_size 1024
+      --d_model 384
+      --n_layers 10
+      --n_heads 6
+      --dropout 0.0
+      --batch_size 8
+      --grad_accum_steps 16
+      --learning_rate 3e-4
+      --min_lr 3e-5
+      --warmup_steps 1000
+      --epochs 3
+      --lr_decay_steps 11115
+      --eval_interval 8000
+      --eval_batches 100
+      --chunk_size 100000
+      --tokenizer_path checkpoints/tiny_gpt/tokenizer.json
+      --aim_repo /opt/aim
+      --aim_experiment storyteller
     deploy:
       resources:
         reservations:
@@ -63,3 +100,6 @@ services:
       python scripts/export_model.py
       --checkpoint checkpoints/tiny_gpt
       --output checkpoints/tiny_gpt_hub
+
+volumes:
+  aim-data:

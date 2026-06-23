@@ -13,5 +13,6 @@ dependencies = [
     "huggingface_hub==1.20.1",
     "safetensors==0.8.0",
     "datasets",
+    "aim",
     "gradio"
 ]

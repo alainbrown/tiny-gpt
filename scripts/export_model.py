@@ -1,4 +1,5 @@
 import argparse
+import inspect
 import json
 import shutil
 from pathlib import Path
@@ -6,6 +7,7 @@ from pathlib import Path
 from transformers import AutoModelForCausalLM, AutoTokenizer, PreTrainedTokenizerFast
 
 from tiny_gpt.configuration_tiny_gpt import TinyGPTConfig
+from tiny_gpt.model import GPTModel
 from tiny_gpt.modeling_tiny_gpt import TinyGPTForCausalLM
 
 
@@ -88,6 +90,10 @@ def parse_args():
 
 
 def export_model(checkpoint, output):
+    latest = checkpoint / "latest"
+    if (latest / "config.json").is_file():
+        checkpoint = latest
+
     required = ("config.json", "model.safetensors", "tokenizer.json")
     missing = [name for name in required if not (checkpoint / name).is_file()]
     if missing:
@@ -96,9 +102,6 @@ def export_model(checkpoint, output):
     if output.exists():
         shutil.rmtree(output)
     output.mkdir(parents=True)
-
-    TinyGPTConfig.register_for_auto_class()
-    TinyGPTForCausalLM.register_for_auto_class("AutoModelForCausalLM")
 
     model = TinyGPTForCausalLM.from_pretrained(checkpoint)
     tokenizer = PreTrainedTokenizerFast(
@@ -110,8 +113,24 @@ def export_model(checkpoint, output):
 
     model.config.eos_token_id = tokenizer.eos_token_id
     model.config.pad_token_id = tokenizer.pad_token_id
+    model.config.auto_map = {
+        "AutoConfig": "configuration_tiny_gpt.TinyGPTConfig",
+        "AutoModelForCausalLM": "modeling_tiny_gpt.TinyGPTForCausalLM",
+    }
     model.save_pretrained(output, safe_serialization=True)
     tokenizer.save_pretrained(output)
+
+    configuration_source = Path(inspect.getfile(TinyGPTConfig))
+    modeling_source = Path(inspect.getfile(TinyGPTForCausalLM))
+    model_source = Path(inspect.getfile(GPTModel))
+    shutil.copy2(configuration_source, output / "configuration_tiny_gpt.py")
+    shutil.copy2(model_source, output / "model.py")
+
+    modeling_code = modeling_source.read_text(encoding="utf-8")
+    (output / "modeling_tiny_gpt.py").write_text(
+        modeling_code,
+        encoding="utf-8",
+    )
     (output / "README.md").write_text(MODEL_CARD, encoding="utf-8")
 
     config = json.loads((output / "config.json").read_text(encoding="utf-8"))
@@ -134,7 +153,11 @@ def export_model(checkpoint, output):
     if generated.shape[1] != inputs["input_ids"].shape[1] + 1:
         raise RuntimeError("Generation validation returned an unexpected shape")
 
-    excluded = {"optimizer.pt", "TinyStories.progress"}
+    excluded = {
+        "optimizer.pt",
+        "trainer_state.pt",
+        "TinyStories.progress",
+    }
     leaked = excluded.intersection(path.name for path in output.iterdir())
     if leaked:
         raise RuntimeError(f"Training-only files leaked into export: {sorted(leaked)}")

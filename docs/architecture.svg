@@ -1,0 +1,116 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1080" height="760" viewBox="0 0 1080 760" role="img" aria-labelledby="title desc">
+  <title id="title">Tiny GPT decoder-only Transformer architecture</title>
+  <desc id="desc">Textbook-style diagram of Tiny GPT showing embeddings, ten repeated Pre-LayerNorm decoder blocks, causal multi-head self-attention, MLP, final LayerNorm, tied LM head, and output logits.</desc>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#111827"/>
+    </marker>
+    <style>
+      .page { fill: #ffffff; }
+      .stage { fill: #f9fafb; stroke: #111827; stroke-width: 1.8; }
+      .stack { fill: #f3f4f6; stroke: #111827; stroke-width: 2.2; }
+      .sub { fill: #ffffff; stroke: #374151; stroke-width: 1.5; }
+      .add { fill: #ffffff; stroke: #047857; stroke-width: 1.8; }
+      .math { fill: #fff7ed; stroke: #9a3412; stroke-width: 1.5; }
+      .side { fill: #eff6ff; stroke: #1d4ed8; stroke-width: 1.5; }
+      .title { font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; font-size: 24px; font-weight: 700; fill: #111827; }
+      .h { font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; font-size: 17px; font-weight: 700; fill: #111827; }
+      .t { font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; font-size: 14px; fill: #111827; }
+      .s { font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; font-size: 12px; fill: #374151; }
+      .tiny { font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; font-size: 11px; fill: #4b5563; }
+      .wire { stroke: #111827; stroke-width: 1.8; fill: none; marker-end: url(#arrow); }
+      .skip { stroke: #047857; stroke-width: 1.8; fill: none; marker-end: url(#arrow); stroke-dasharray: 7 5; }
+      .thin { stroke: #6b7280; stroke-width: 1.2; fill: none; marker-end: url(#arrow); }
+    </style>
+  </defs>
+
+  <rect width="1080" height="760" class="page"/>
+  <text x="540" y="42" text-anchor="middle" class="title">Tiny GPT: GPT-2-style Decoder-Only Transformer</text>
+  <text x="540" y="68" text-anchor="middle" class="s">24.28M tied parameters, context 1,024, vocab 16,000, hidden 384, 10 layers, 6 heads</text>
+
+  <rect x="80" y="102" width="250" height="70" rx="6" class="stage"/>
+  <text x="205" y="130" text-anchor="middle" class="h">Input IDs</text>
+  <text x="205" y="153" text-anchor="middle" class="s">shape: B x T, T &lt;= 1024</text>
+
+  <line x1="330" y1="137" x2="382" y2="137" class="wire"/>
+
+  <rect x="382" y="90" width="316" height="95" rx="6" class="stage"/>
+  <text x="540" y="118" text-anchor="middle" class="h">Embedding Sum</text>
+  <text x="540" y="141" text-anchor="middle" class="t">tok_emb[input] + pos_emb[0:T]</text>
+  <text x="540" y="164" text-anchor="middle" class="s">nn.Embedding + nn.Dropout -&gt; B x T x 384</text>
+
+  <line x1="540" y1="185" x2="540" y2="230" class="wire"/>
+
+  <rect x="290" y="230" width="500" height="292" rx="8" class="stack"/>
+  <text x="540" y="260" text-anchor="middle" class="h">Repeat 10x: Pre-LayerNorm Decoder Block</text>
+  <text x="540" y="282" text-anchor="middle" class="s">Residual stream width d_model = 384</text>
+
+  <rect x="330" y="304" width="170" height="46" rx="5" class="sub"/>
+  <text x="415" y="332" text-anchor="middle" class="t">LayerNorm</text>
+  <line x1="500" y1="327" x2="540" y2="327" class="wire"/>
+
+  <rect x="540" y="304" width="210" height="46" rx="5" class="sub"/>
+  <text x="645" y="323" text-anchor="middle" class="t">Causal MHA</text>
+  <text x="645" y="340" text-anchor="middle" class="tiny">SDPA, 6 heads x 64</text>
+
+  <line x1="645" y1="350" x2="645" y2="365" class="wire"/>
+  <path d="M 316 327 C 248 327 248 374 330 374 L 632 374" class="skip"/>
+  <circle cx="645" cy="374" r="12" class="add"/>
+  <text x="645" y="379" text-anchor="middle" class="h">+</text>
+  <text x="706" y="379" text-anchor="middle" class="s">residual add</text>
+
+  <line x1="645" y1="386" x2="645" y2="407" class="wire"/>
+
+  <rect x="330" y="412" width="170" height="46" rx="5" class="sub"/>
+  <text x="415" y="440" text-anchor="middle" class="t">LayerNorm</text>
+  <line x1="500" y1="435" x2="540" y2="435" class="wire"/>
+
+  <rect x="540" y="412" width="210" height="46" rx="5" class="sub"/>
+  <text x="645" y="431" text-anchor="middle" class="t">MLP</text>
+  <text x="645" y="448" text-anchor="middle" class="tiny">Linear, GELU, Linear</text>
+
+  <line x1="645" y1="458" x2="645" y2="477" class="wire"/>
+  <path d="M 316 435 C 248 435 248 486 330 486 L 632 486" class="skip"/>
+  <circle cx="645" cy="486" r="12" class="add"/>
+  <text x="645" y="491" text-anchor="middle" class="h">+</text>
+  <text x="706" y="491" text-anchor="middle" class="s">residual add</text>
+
+  <rect x="822" y="286" width="205" height="112" rx="6" class="math"/>
+  <text x="924" y="318" text-anchor="middle" class="h">Attention math</text>
+  <text x="924" y="343" text-anchor="middle" class="s">Q,K,V = x Wqkv</text>
+  <text x="924" y="363" text-anchor="middle" class="s">softmax(QK^T / sqrt(64)</text>
+  <text x="924" y="381" text-anchor="middle" class="s">+ causal mask) V</text>
+  <text x="924" y="393" text-anchor="middle" class="tiny">F.scaled_dot_product_attention</text>
+
+  <rect x="822" y="416" width="205" height="90" rx="6" class="math"/>
+  <text x="924" y="442" text-anchor="middle" class="h">MLP math</text>
+  <text x="924" y="467" text-anchor="middle" class="s">384 -&gt; 1536 -&gt; 384</text>
+  <text x="924" y="489" text-anchor="middle" class="s">F.gelu hidden activation</text>
+
+  <line x1="750" y1="327" x2="822" y2="327" class="thin"/>
+  <line x1="750" y1="435" x2="822" y2="455" class="thin"/>
+
+  <line x1="540" y1="522" x2="540" y2="566" class="wire"/>
+
+  <rect x="390" y="566" width="300" height="62" rx="6" class="stage"/>
+  <text x="540" y="592" text-anchor="middle" class="h">Final LayerNorm</text>
+  <text x="540" y="613" text-anchor="middle" class="s">nn.LayerNorm(eps=1e-6)</text>
+
+  <line x1="690" y1="597" x2="760" y2="597" class="wire"/>
+
+  <rect x="760" y="560" width="240" height="74" rx="6" class="side"/>
+  <text x="880" y="587" text-anchor="middle" class="h">Tied LM Head</text>
+  <text x="880" y="609" text-anchor="middle" class="s">Linear(384, 16000), no bias</text>
+  <text x="880" y="626" text-anchor="middle" class="tiny">weight = token embedding weight</text>
+
+  <line x1="880" y1="634" x2="880" y2="684" class="wire"/>
+  <rect x="760" y="684" width="240" height="52" rx="6" class="stage"/>
+  <text x="880" y="707" text-anchor="middle" class="h">Logits / CE Loss</text>
+  <text x="880" y="727" text-anchor="middle" class="s">B x T x 16000, shifted labels</text>
+
+  <rect x="76" y="582" width="240" height="104" rx="6" class="side"/>
+  <text x="196" y="608" text-anchor="middle" class="h">Reference path</text>
+  <text x="196" y="631" text-anchor="middle" class="s">same architecture</text>
+  <text x="196" y="652" text-anchor="middle" class="s">manual LayerNorm</text>
+  <text x="196" y="673" text-anchor="middle" class="s">separate Q/K/V + explicit mask</text>
+</svg>

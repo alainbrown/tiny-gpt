@@ -77,9 +77,9 @@
 
   <rect x="822" y="286" width="205" height="112" rx="6" class="math"/>
   <text x="924" y="318" text-anchor="middle" class="h">Attention math</text>
-  <text x="924" y="343" text-anchor="middle" class="s">Q,K,V = x Wqkv</text>
+  <text x="924" y="343" text-anchor="middle" class="s">Q,K,V_attn = x Wqkv</text>
   <text x="924" y="363" text-anchor="middle" class="s">softmax(QK^T / sqrt(64)</text>
-  <text x="924" y="381" text-anchor="middle" class="s">+ causal mask) V</text>
+  <text x="924" y="381" text-anchor="middle" class="s">+ causal mask) V_attn</text>
   <text x="924" y="393" text-anchor="middle" class="tiny">F.scaled_dot_product_attention</text>
 
   <rect x="822" y="416" width="205" height="90" rx="6" class="math"/>

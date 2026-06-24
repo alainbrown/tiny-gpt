@@ -40,6 +40,21 @@ Latest full evaluation on 5,000 TinyStories validation examples:
 
 ![Tiny GPT architecture](docs/architecture.svg)
 
+### Notation
+
+| Symbol | Meaning |
+| --- | --- |
+| `B` | Batch size. |
+| `T` | Sequence length, up to 1,024 tokens. |
+| `vocab_size` | Token vocabulary size, 16,000. |
+| `d_model` | Residual-stream width, 384. |
+| `H` | Number of attention heads, 6. |
+| `d_head` | Per-head attention width, `d_model / H = 64`. |
+| `Q`, `K`, `V_attn` | Query, key, and value tensors used inside attention. |
+| `Wqkv` | Fused learned projection that produces `Q`, `K`, and `V_attn` together. |
+| `causal mask` | Mask that prevents a token from attending to future tokens. |
+| `logits` | Unnormalized vocabulary scores used for next-token prediction. |
+
 ### Forward Pass
 
 | Stage | Shape | Implementation | Notes |
